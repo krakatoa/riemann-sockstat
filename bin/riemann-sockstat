@@ -1,0 +1,41 @@
+#!/usr/bin/env ruby
+
+# Riemann agent to collect sockstat metrics
+
+require 'riemann/tools'
+
+class Riemann::Tools::Sockstat
+  include Riemann::Tools
+
+  TCP_METRICS = %w{ inuse orphan tw alloc mem }.freeze
+  UDP_METRICS = %w{ inuse mem }.freeze
+
+  def initialize
+    @collect_tcp = true
+  end
+
+  def tick
+    raw_stats = `cat /proc/net/sockstat`
+
+    collect_tcp(raw_stats) if @collect_tcp
+  end
+
+  def collect_tcp(raw_stats)
+    stats = raw_stats.match(/TCP:\sinuse\s(\d+)\sorphan\s(\d+)\stw\s(\d+)\salloc\s(\d+)\smem\s(\d+)/).captures
+    report_stats('tcp', Hash[*TCP_METRICS.zip(stats).flatten])
+  end
+
+  def report_stats(sock_kind, stats)
+    stats.each_pair do |k, v|
+      report({
+        service:      "#{sock_kind}_#{k}",
+        metric:       v.to_i,
+        state:        'ok',
+        tags:         ['sockstat'],
+        description:  ''
+      })
+    end
+  end
+end
+
+Riemann::Tools::Sockstat.run
